@@ -8,7 +8,11 @@
 #ifndef NRF24L01_RX_H
 #define	NRF24L01_RX_H
 
-
+void initialize_rx(void);
+unsigned char validate_all_registers(void);
+void print_all_registers(void);
+void start_listening(void);
+void search_and_process_packets(void);
 
 #endif	/* NRF24L01_RX_H */
 

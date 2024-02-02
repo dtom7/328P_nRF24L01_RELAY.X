@@ -112,5 +112,144 @@
 #define RF_PWR_LOW  1
 #define RF_PWR_HIGH 2
 
+#define F_CPU 16000000UL // 16 MHz
+
+#include "328pb_usart_tx.h"
+#include "spi_master.h"
+#include <stdio.h>
+#include <avr/io.h>
+
+void usart_print_hex(const char* key, unsigned char value);
+void usart_print_dec(const char* key, unsigned char value);
+void print_register(const char* reg_name, unsigned char reg);
+unsigned char validate_register(unsigned char reg, unsigned char expected_value);
+unsigned char read_status_register(void);
+void write_register(unsigned char reg, unsigned char* bytes, unsigned char bytes_count);
+void write_command(unsigned char command, unsigned char* bytes, unsigned char bytes_count);
+void write_command_or_register(unsigned char command_or_reg, unsigned char* bytes, unsigned char bytes_count);
+void read_register(unsigned char reg, unsigned char* bytes, unsigned char bytes_count);
+void read_command(unsigned char command, unsigned char* bytes, unsigned char bytes_count);
+void read_command_or_register(unsigned char command_or_reg, unsigned char* bytes, unsigned char bytes_count);
+void ce_down(void);
+void ce_up(void);
+void clear_irq_flags(void);
+void flush_tx_fifo(void);
+void flush_rx_fifo(void);
+void reset_plos_cnt(void);
+
+unsigned char validate_register(unsigned char reg, unsigned char expected_byte) {
+    if (reg == STATUS) {
+        unsigned char byte = read_status_register();
+        if (byte == 0x0E) {
+            return 1;
+        }
+    } else {
+        unsigned char bytes[2];
+        read_register(reg, bytes, 1);
+        // bytes[0] is always STATUS register
+        if (bytes[0] == 0x0E && bytes[1] == expected_byte) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+void print_register(const char* reg_name, unsigned char reg) {
+    if (reg == STATUS) {
+        unsigned char byte = read_status_register();
+        usart_print_hex(reg_name, byte);
+    } else {
+        unsigned char bytes[2];
+        read_register(reg, bytes, 1);
+        usart_print_hex(reg_name, bytes[1]);
+    }
+}
+
+void usart_print_hex(const char* key, unsigned char value) {
+    char str_buffer[30];
+    sprintf(str_buffer, "%s: %#04X", key, value);
+    usart0_tx_string(str_buffer);
+}
+
+void usart_print_dec(const char* key, unsigned char value) {
+    char str_buffer[30];
+    sprintf(str_buffer, "%s: %d", key, value);
+    usart0_tx_string(str_buffer);
+}
+
+void write_register(unsigned char reg, unsigned char* bytes, unsigned char bytes_count) {
+    write_command_or_register((W_REGISTER | reg), bytes, bytes_count);
+}
+
+void write_command(unsigned char command, unsigned char* bytes, unsigned char bytes_count) {
+    write_command_or_register(command, bytes, bytes_count);
+}
+
+void write_command_or_register(unsigned char command_or_reg, unsigned char* bytes, unsigned char bytes_count) {
+    unsigned char tx_bytes[bytes_count + 1]; // to include the register
+    tx_bytes[0] = command_or_reg; // register address or command as least significant byte
+    for (unsigned char i = 0; i < bytes_count; i++) {
+        tx_bytes[i + 1] = *(bytes + i); // push the bytes
+    }
+    unsigned char rx_bytes[bytes_count + 1]; // received bytes - not used
+    spi_master_tx_rx_bytes(tx_bytes, rx_bytes, (bytes_count + 1));
+}
+
+// bytes array should have the capacity to include the status register
+
+void read_register(unsigned char reg, unsigned char* bytes, unsigned char bytes_count) {
+    if (reg == STATUS) {
+        *bytes = read_status_register();
+    } else {
+        read_command_or_register((R_REGISTER | reg), bytes, bytes_count);
+    }
+}
+
+// bytes array should have the capacity to include the status register
+
+void read_command(unsigned char command, unsigned char* bytes, unsigned char bytes_count) {
+    read_command_or_register(command, bytes, bytes_count);
+}
+
+void read_command_or_register(unsigned char command_or_reg, unsigned char* bytes, unsigned char bytes_count) {
+    unsigned char tx_bytes[bytes_count + 1]; // to include the register
+    tx_bytes[0] = command_or_reg; // register address or command as least significant byte
+    for (unsigned char i = 0; i < bytes_count; i++) {
+        tx_bytes[i + 1] = NOP; // push the bytes
+    }
+    spi_master_tx_rx_bytes(tx_bytes, bytes, (bytes_count + 1));
+}
+
+void flush_tx_fifo(void) {
+    spi_master_tx_rx_byte(FLUSH_TX);
+}
+
+void flush_rx_fifo(void) {
+    spi_master_tx_rx_byte(FLUSH_RX);
+}
+
+void reset_plos_cnt(void) {
+    unsigned char RF_CH_BYTE = 0x64;
+    write_register(RF_CH, &RF_CH_BYTE, 1);
+}
+
+unsigned char read_status_register(void) {
+    return spi_master_tx_rx_byte(STATUS);
+}
+
+void ce_down(void) {
+    PORTB &= ~(1 << CE);
+}
+
+void ce_up(void) {
+    PORTB |= (1 << CE);
+}
+
+void clear_irq_flags(void) {
+    unsigned char STATUS_BYTE = read_status_register();
+    STATUS_BYTE |= (1 << RX_DR) | (1 << TX_DS) | (1 << MAX_RT);
+    write_register(STATUS, &STATUS_BYTE, 1);
+}
+
 #endif	/* NRF24L01_H */
 

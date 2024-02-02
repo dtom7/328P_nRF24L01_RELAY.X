@@ -12,7 +12,6 @@ void initialize_tx(void);
 unsigned char validate_all_registers(void);
 void print_all_registers(void);
 void write_tx_payload(unsigned char* bytes, unsigned char bytes_count);
-unsigned char tx_in_progress(void);
 unsigned char tx_is_successful(void);
 unsigned char ack_payload_is_available(void);
 void read_ack_payload(unsigned char* bytes, unsigned char bytes_count);
