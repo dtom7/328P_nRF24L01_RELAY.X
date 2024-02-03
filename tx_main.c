@@ -36,7 +36,7 @@ int main(void) {
 void loop(void) {
     while (1) {
         tx_send(0xAF); // 175
-        _delay_ms(1000);
+        _delay_ms(2000);
         usart0_tx_string("=================");
     }
 }

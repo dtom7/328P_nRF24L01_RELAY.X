@@ -112,17 +112,25 @@
 #define RF_PWR_LOW  1
 #define RF_PWR_HIGH 2
 
+#define PTX 0
+#define PRX 1
+
 #define F_CPU 16000000UL // 16 MHz
+#define CE PB1 // CE pin of nRF
 
 #include "328pb_usart_tx.h"
 #include "spi_master.h"
 #include <stdio.h>
 #include <avr/io.h>
+#include <util/delay.h>
 
+void initialize(unsigned char role);
 void usart_print_hex(const char* key, unsigned char value);
 void usart_print_dec(const char* key, unsigned char value);
 void print_register(const char* reg_name, unsigned char reg);
+void _print_all_registers(void);
 unsigned char validate_register(unsigned char reg, unsigned char expected_value);
+unsigned char _validate_all_registers(unsigned char config);
 unsigned char read_status_register(void);
 void write_register(unsigned char reg, unsigned char* bytes, unsigned char bytes_count);
 void write_command(unsigned char command, unsigned char* bytes, unsigned char bytes_count);
@@ -136,6 +144,56 @@ void clear_irq_flags(void);
 void flush_tx_fifo(void);
 void flush_rx_fifo(void);
 void reset_plos_cnt(void);
+
+void initialize(unsigned char role) {
+    DDRB |= (1 << CE); // set CE as output
+    // configure RF_SETUP register
+    unsigned char RF_SETUP_BYTE = 0x00;
+    RF_SETUP_BYTE &= ~(1 << RF_DR_LOW) & ~(1 << RF_DR_HIGH); // air data rate 1 Mbps
+    RF_SETUP_BYTE |= (1 << RF_PWR_HIGH) | (1 << RF_PWR_LOW); // RF output power 0dBm
+    write_register(RF_SETUP, &RF_SETUP_BYTE, 1);
+    // configure RF_CH register
+    unsigned char RF_CH_BYTE = 0x64;
+    write_register(RF_CH, &RF_CH_BYTE, 1); // RF channel frequency 100 meaning 2.5 GHz or 2500 MHz
+    // configure SETUP_RETR register
+    unsigned char SETUP_RETR_BYTE = 0xFF; //0x31; // upto 1 re-transmit after a delay of 1000us if ack not received
+    write_register(SETUP_RETR, &SETUP_RETR_BYTE, 1);
+    // configure EN_AA register
+    unsigned char EN_AA_BYTE = 0x01;
+    write_register(EN_AA, &EN_AA_BYTE, 1); // enable auto ack in data pipe 0 ??
+    // configure EN_RXADDR register
+    unsigned char EN_RXADDR_BYTE = 0x00;
+    EN_RXADDR_BYTE |= (1 << ERX_P0); // enable data pipe 0
+    write_register(EN_RXADDR, &EN_RXADDR_BYTE, 1);
+    // configure SETUP_AW register
+    unsigned char SETUP_AW_BYTE = 0x02;
+    write_register(SETUP_AW, &SETUP_AW_BYTE, 1); // address width 4 bytes
+    // configure RX_ADDR_P0 register 
+    unsigned char RX_ADDR_P0_BYTES[] = {0xE1, 0xE2, 0xE3, 0xE4};
+    write_register(RX_ADDR_P0, RX_ADDR_P0_BYTES, 4); // rx address of data pipe 0 (4 bytes)
+    // configure TX_ADDR register 
+    write_register(TX_ADDR, RX_ADDR_P0_BYTES, 4); // transmit address (4 bytes)
+    // configure FEATURE register
+    unsigned char FEATURE_BYTE = 0x00;
+    FEATURE_BYTE |= (1 << EN_DPL) | (1 << EN_ACK_PAY); // enable dynamic payload length and payload with ack
+    write_register(FEATURE, &FEATURE_BYTE, 1);
+    // configure DYNPD register 
+    unsigned char DYNPD_BYTE = 0x01;
+    write_register(DYNPD, &DYNPD_BYTE, 1); // enable dynamic payload length in data pipe 0
+    // configure CONFIG register
+    unsigned char CONFIG_BYTE = 0x00;
+    CONFIG_BYTE |= (1 << MASK_RX_DR) | (1 << MASK_TX_DS) | (1 << MASK_MAX_RT); // mask all interrupts
+    CONFIG_BYTE |= (1 << EN_CRC) | (1 << CRCO); // enable CRC with 2 bytes
+    CONFIG_BYTE |= (1 << PWR_UP); // power up
+    if (role == PRX) {
+        CONFIG_BYTE |= (1 << PRIM_RX); // RX
+    } else {
+        CONFIG_BYTE &= ~(1 << PRIM_RX); // TX
+    }
+    write_register(CONFIG, &CONFIG_BYTE, 1);
+    ce_down(); // transition to standby-1 mode
+    _delay_ms(10); // give some time to transition to standby-1 mode
+}
 
 unsigned char validate_register(unsigned char reg, unsigned char expected_byte) {
     if (reg == STATUS) {
@@ -154,6 +212,21 @@ unsigned char validate_register(unsigned char reg, unsigned char expected_byte) 
     return 0;
 }
 
+unsigned char _validate_all_registers(unsigned char config) {
+    return (validate_register(STATUS, 0x0E) &
+            validate_register(RF_SETUP, 0x06) &
+            validate_register(RF_CH, 0x64) &
+            validate_register(SETUP_RETR, 0xFF) &
+            validate_register(EN_AA, 0x01) &
+            validate_register(EN_RXADDR, 0x01) &
+            validate_register(SETUP_AW, 0x02) &
+            validate_register(RX_ADDR_P0, 0xE1) &
+            validate_register(TX_ADDR, 0xE1) &
+            validate_register(FEATURE, 0x06) &
+            validate_register(DYNPD, 0x01) &
+            validate_register(CONFIG, config));
+}
+
 void print_register(const char* reg_name, unsigned char reg) {
     if (reg == STATUS) {
         unsigned char byte = read_status_register();
@@ -163,6 +236,21 @@ void print_register(const char* reg_name, unsigned char reg) {
         read_register(reg, bytes, 1);
         usart_print_hex(reg_name, bytes[1]);
     }
+}
+
+void _print_all_registers(void) {
+    print_register("STATUS", STATUS);
+    print_register("RF_SETUP", RF_SETUP);
+    print_register("RF_CH", RF_CH);
+    print_register("SETUP_RETR", SETUP_RETR);
+    print_register("EN_AA", EN_AA);
+    print_register("EN_RXADDR", EN_RXADDR);
+    print_register("SETUP_AW", SETUP_AW);
+    print_register("RX_ADDR_P0", RX_ADDR_P0);
+    print_register("TX_ADDR", TX_ADDR);
+    print_register("FEATURE", FEATURE);
+    print_register("DYNPD", DYNPD);
+    print_register("CONFIG", CONFIG);
 }
 
 void usart_print_hex(const char* key, unsigned char value) {
