@@ -153,14 +153,14 @@ void initialize(unsigned char role) {
     RF_SETUP_BYTE |= (1 << RF_PWR_HIGH) | (1 << RF_PWR_LOW); // RF output power 0dBm
     write_register(RF_SETUP, &RF_SETUP_BYTE, 1);
     // configure RF_CH register
-    unsigned char RF_CH_BYTE = 0x64;
-    write_register(RF_CH, &RF_CH_BYTE, 1); // RF channel frequency 100 meaning 2.5 GHz or 2500 MHz
+    unsigned char RF_CH_BYTE = 0x78;
+    write_register(RF_CH, &RF_CH_BYTE, 1); // RF channel frequency 120 meaning 2.520 GHz or 2520 MHz
     // configure SETUP_RETR register
-    unsigned char SETUP_RETR_BYTE = 0xFF; //0x31; // upto 1 re-transmit after a delay of 1000us if ack not received
+    unsigned char SETUP_RETR_BYTE = 0xFF; // upto 15 re-transmits after a delay of 4000us if ack not received
     write_register(SETUP_RETR, &SETUP_RETR_BYTE, 1);
     // configure EN_AA register
     unsigned char EN_AA_BYTE = 0x01;
-    write_register(EN_AA, &EN_AA_BYTE, 1); // enable auto ack in data pipe 0 ??
+    write_register(EN_AA, &EN_AA_BYTE, 1); // enable auto ack in data pipe 0
     // configure EN_RXADDR register
     unsigned char EN_RXADDR_BYTE = 0x00;
     EN_RXADDR_BYTE |= (1 << ERX_P0); // enable data pipe 0
@@ -215,7 +215,7 @@ unsigned char validate_register(unsigned char reg, unsigned char expected_byte) 
 unsigned char _validate_all_registers(unsigned char config) {
     return (validate_register(STATUS, 0x0E) &
             validate_register(RF_SETUP, 0x06) &
-            validate_register(RF_CH, 0x64) &
+            validate_register(RF_CH, 0x78) &
             validate_register(SETUP_RETR, 0xFF) &
             validate_register(EN_AA, 0x01) &
             validate_register(EN_RXADDR, 0x01) &
@@ -317,7 +317,7 @@ void flush_rx_fifo(void) {
 }
 
 void reset_plos_cnt(void) {
-    unsigned char RF_CH_BYTE = 0x64;
+    unsigned char RF_CH_BYTE = 0x78;
     write_register(RF_CH, &RF_CH_BYTE, 1);
 }
 

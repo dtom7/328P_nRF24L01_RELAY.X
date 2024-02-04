@@ -10,12 +10,15 @@
 #include <util/delay.h>
 #include "328pb_usart_tx.h"
 #include <stdio.h>
+#include <avr/io.h>
 
 void tx_send(unsigned char tx_byte);
 void loop(void);
+void setup_ports(void);
 
 int main(void) {
-    _delay_ms(250); // give some time for nRF to enter power down mode from reset/start-up
+    _delay_ms(250); // give some time for nRF to enter power down mode from reset/start-up 
+    setup_ports();
     usart0_init();
     usart0_tx_string("=================");
     initialize_tx();
@@ -35,10 +38,26 @@ int main(void) {
 
 void loop(void) {
     while (1) {
-        tx_send(0xAF); // 175
-        _delay_ms(2000);
-        usart0_tx_string("=================");
+        if (!(PIND & (1 << PD7))) { // ON
+            _delay_ms(1000); // switch debounce delay
+            tx_send(0xC8); // 200        
+            usart0_tx_string("=================");
+        }
+        if (!(PIND & (1 << PD6))) { // OFF
+            _delay_ms(1000); // switch debounce delay
+            tx_send(0x64); // 100        
+            usart0_tx_string("=================");
+        }
     }
+}
+
+void setup_ports(void) {
+    DDRD &= ~(1 << PD7); // PD7 as input for on switch
+    PORTD |= (1 << PD7); // enable internal pullup resistor for PD7
+    DDRD &= ~(1 << PD6); // PD6 as input for off switch
+    PORTD |= (1 << PD6); // enable internal pullup resistor for PD6
+    DDRD |= (1 << PD4); // PD4 as output for ack LED
+    PORTD &= ~(1 << PD4); // turn off ack LED    
 }
 
 void tx_send(unsigned char tx_byte) {
@@ -52,9 +71,16 @@ void tx_send(unsigned char tx_byte) {
             char str_buffer[25];
             sprintf(str_buffer, "ack payload: %d", bytes[1]);
             usart0_tx_string(str_buffer);
+            if (bytes[1] == 0xFF) {
+                PORTD |= (1 << PD4); // turn on ack LED 
+                _delay_ms(500); // keep ack LED turned on for some time
+            }
+        } else {
+            usart0_tx_string("ack_payload_not_available");
         }
     } else {
         usart0_tx_string("tx_failed");
     }
     print_tx_results();
+    PORTD &= ~(1 << PD4); // turn off ack LED
 }

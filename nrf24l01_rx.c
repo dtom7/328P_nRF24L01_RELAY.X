@@ -34,6 +34,8 @@ void start_listening(void) {
 }
 
 void search_and_process_packets(void) {
+    unsigned char ack_p_bytes = 0xFF; // send current status as ack payload
+    write_command(0xA8, &ack_p_bytes, 1); // 10101000 - data pipe 0
     usart0_tx_string("waiting for packet");
     while (rx_in_progress()); // wait for a packet
     usart0_tx_string("packet received");
@@ -62,11 +64,7 @@ void process_received_packet(void) {
     read_command(R_RX_PAYLOAD, rx_p_bytes, 1);
     usart_print_dec("R_RX_PAYLOAD: ", rx_p_bytes[1]);
     // do some processing here
-    flush_tx_fifo();
-    unsigned char ack_p_bytes = 0xFA; // 250
-    write_command(0xA8, &ack_p_bytes, 1); // 10101000 - data pipe 0
-    flush_rx_fifo();
-    clear_irq_flags();
+    flush_and_clear();
 }
 
 void flush_and_clear(void) {
